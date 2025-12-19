@@ -1,6 +1,5 @@
 import json
-import urllib.request
-import urllib.error
+import requests
 import base64
 import os
 from typing import Dict, Optional
@@ -17,7 +16,6 @@ class LlamaService:
     def analyze_face(self, image_bytes: bytes) -> Dict:
         """
         Sends image to Llama 3.2 Vision and expects a structured JSON response.
-        Uses standard urllib to avoid 'requests' dependency issues.
         """
         base64_image = self._encode_image(image_bytes)
         
@@ -55,40 +53,35 @@ RULES:
             "stream": False,
             "format": "json", 
             "options": {
-                "temperature": 0.2,
+                "temperature": 0.2, 
                 "num_ctx": 2048 
             }
         }
 
         try:
-            data = json.dumps(payload).encode('utf-8')
-            req = urllib.request.Request(self.api_url, data=data, headers={'Content-Type': 'application/json'})
+            response = requests.post(self.api_url, json=payload)
+            response.raise_for_status()
+            result = response.json()
             
-            with urllib.request.urlopen(req) as response:
-                result = json.loads(response.read().decode('utf-8'))
-                content = result.get("message", {}).get("content", "{}")
-                
-                try:
-                    parsed_content = json.loads(content)
-                    return parsed_content
-                except json.JSONDecodeError:
-                    return {
-                        "emotion": "error",
-                        "confidence": 0.0,
-                        "reasoning": f"Failed to parse JSON: {content}"
-                    }
+            content = result.get("message", {}).get("content", "{}")
+            
+            # Parse JSON content
+            try:
+                parsed_content = json.loads(content)
+                return parsed_content
+            except json.JSONDecodeError:
+                # Fallback if model returns text wrapper despite instructions
+                return {
+                    "emotion": "error",
+                    "confidence": 0.0,
+                    "reasoning": f"Failed to parse JSON: {content}"
+                }
 
-        except urllib.error.URLError as e:
+        except requests.exceptions.RequestException as e:
             return {
                 "emotion": "error",
                 "confidence": 0.0,
                 "reasoning": f"Connection error: {str(e)}"
-            }
-        except Exception as e:
-             return {
-                "emotion": "error",
-                "confidence": 0.0,
-                "reasoning": f"Unexpected error: {str(e)}"
             }
 
 # Singleton instance
