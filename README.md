@@ -1,6 +1,6 @@
 # Sistema Biométrico IA / AI Biometric System
 
-**Current Version**: 0.1.0 (Backend Alpha)
+**Current Version**: 1.1.0 (Stable - Full Integration)
 
 ---
 
