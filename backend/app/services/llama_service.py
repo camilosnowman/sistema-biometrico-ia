@@ -1,22 +1,38 @@
 import json
 import requests
 import base64
-import os
-from typing import Dict, Optional
+from typing import Dict, Any
+from ..schemas import EmotionResponse
+from ..logger import get_logger
+
+logger = get_logger("LlamaService")
 
 class LlamaService:
     def __init__(self, model: str = "llama3.2-vision", provider: str = "ollama", api_url: str = "http://localhost:11434/api/chat"):
         self.model = model
         self.provider = provider
         self.api_url = api_url
+        logger.info(f"LlamaService initialized with model: {model}")
 
     def _encode_image(self, image_bytes: bytes) -> str:
         return base64.b64encode(image_bytes).decode('utf-8')
 
-    def analyze_face(self, image_bytes: bytes) -> Dict:
+    def check_connection(self) -> bool:
+        """Checks if the LLM provider is reachable."""
+        try:
+            # Simple check to tags endpoint usually confirms Ollama is up
+            requests.get("http://localhost:11434/api/tags", timeout=2)
+            return True
+        except requests.RequestException:
+            logger.error("Llama Provider unreachable.")
+            return False
+
+    def analyze_face(self, image_bytes: bytes) -> EmotionResponse:
         """
         Sends image to Llama 3.2 Vision and expects a structured JSON response.
+        Returns an EmotionResponse Pydantic model.
         """
+        logger.info("Starting face analysis...")
         base64_image = self._encode_image(image_bytes)
         
         system_prompt = """
@@ -68,21 +84,20 @@ RULES:
             # Parse JSON content
             try:
                 parsed_content = json.loads(content)
-                return parsed_content
-            except json.JSONDecodeError:
-                # Fallback if model returns text wrapper despite instructions
-                return {
-                    "emotion": "error",
-                    "confidence": 0.0,
-                    "reasoning": f"Failed to parse JSON: {content}"
-                }
+                logger.info(f"Analysis successful: {parsed_content.get('emotion')}")
+                return EmotionResponse(**parsed_content)
+            except (json.JSONDecodeError, ValueError) as e:
+                logger.error(f"Failed to parse model output: {content}")
+                # Fallback return
+                return EmotionResponse(
+                    emotion="error", 
+                    confidence=0.0, 
+                    reasoning=f"Model output format error: {str(e)}"
+                )
 
         except requests.exceptions.RequestException as e:
-            return {
-                "emotion": "error",
-                "confidence": 0.0,
-                "reasoning": f"Connection error: {str(e)}"
-            }
+            logger.error(f"Request failed: {str(e)}")
+            raise RuntimeError(f"Connection error with Llama provider: {str(e)}")
 
 # Singleton instance
 llama_service = LlamaService()
