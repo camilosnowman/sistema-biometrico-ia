@@ -8,8 +8,30 @@ export interface EmotionAnalysis {
 }
 
 /**
- * Error response from backend API
+/**
+ * Multiple analysis result from batch endpoint
+ */
+export interface BatchResponse {
+  results: EmotionAnalysis[];
+  processed_count: number;
+  failed_count: number;
+}
+
+/**
+ * Detailed health status from backend
+ */
+export interface HealthResponse {
+  status: string;
+  service: string;
+  llama_status: string;
+  version: string;
+}
+
+/**
+ * Structured error response from backend API
  */
 export interface AnalysisError {
   detail: string;
+  type?: string;
 }
+
