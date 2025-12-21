@@ -1,13 +1,28 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from typing import List
+import sys
+import os
 
-from .services.llama_service import llama_service
-from .schemas import EmotionResponse, BatchResponse, HealthResponse
-from .logger import get_logger
+# Ensure the current directory is in sys.path
+current_dir = os.path.dirname(os.path.abspath(__file__))
+if current_dir not in sys.path:
+    sys.path.insert(0, current_dir)
+
+from services.bio_llama_service import llama_service
+import bio_schemas
+import bio_logger
+
+# Extracting what we need from modules
+EmotionResponse = bio_schemas.EmotionResponse
+BatchResponse = bio_schemas.BatchResponse
+HealthResponse = bio_schemas.HealthResponse
+get_logger = bio_logger.get_logger
+
 
 logger = get_logger("MainAPI")
 
@@ -26,6 +41,28 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """
+    Catches any unhandled exceptions and returns a structured JSON response.
+    """
+    logger.error(f"Unhandled error: {str(exc)}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error. Please try again later.", "type": "internal_error"}
+    )
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    """
+    Ensures HTTPExceptions return consistent structure.
+    """
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail, "type": "http_error"}
+    )
+
 
 @app.on_event("startup")
 async def startup_event():
@@ -48,52 +85,96 @@ def health_check(request: Request):
         version="1.1.0"
     )
 
+MAX_IMAGE_SIZE = 5 * 1024 * 1024  # 5 MB
+ALLOWED_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"]
+
 @app.post("/analyze", response_model=EmotionResponse)
-@limiter.limit("10/minute")
+@limiter.limit("15/minute")
 async def analyze_image(request: Request, file: UploadFile = File(...)):
     """
     Analyzes a single image for emotions.
+    - Max size: 5MB
+    - Allowed types: JPEG, PNG, WEBP
     """
-    if not file.content_type.startswith("image/"):
-        raise HTTPException(status_code=400, detail="File must be an image.")
+    # 1. Validate MIME type
+    if file.content_type not in ALLOWED_MIME_TYPES:
+        logger.warning(f"Invalid MIME type: {file.content_type}")
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Invalid file type. Allowed: {', '.join(ALLOWED_MIME_TYPES)}"
+        )
+    
+    # 2. Validate File Size
+    contents = await file.read()
+    if len(contents) > MAX_IMAGE_SIZE:
+        logger.warning(f"File too large: {len(contents)} bytes")
+        raise HTTPException(
+            status_code=413, 
+            detail="Image too large. Maximum size is 5MB."
+        )
     
     try:
-        logger.info(f"Processing simple analysis for {file.filename}")
-        contents = await file.read()
+        logger.info(f"Processing analysis for {file.filename} ({len(contents)} bytes)")
         result = llama_service.analyze_face(contents)
         return result
     except Exception as e:
-        logger.error(f"Error in /analyze: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Critical error in /analyze: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error during analysis")
 
 @app.post("/batch-analyze", response_model=BatchResponse)
-@limiter.limit("2/minute")
+@limiter.limit("5/minute")
 async def batch_analyze(request: Request, files: List[UploadFile] = File(...)):
     """
-    Analyzes multiple images in batch.
+    Analyzes multiple images (max 5) in batch.
+    Processes them sequentially to manage AI model resources.
     """
-    results = []
-    failed = 0
-    
     if len(files) > 5:
          raise HTTPException(status_code=400, detail="Batch size limit exceeded (max 5 images).")
 
+    results = []
+    failed = 0
+    
     for file in files:
         try:
-            if not file.content_type.startswith("image/"):
+            # Re-using the same validations as /analyze
+            if file.content_type not in ALLOWED_MIME_TYPES:
+                logger.warning(f"Batch: Invalid MIME type for {file.filename}")
+                results.append(EmotionResponse(
+                    emotion="error", 
+                    confidence=0.0, 
+                    reasoning=f"File type {file.content_type} not allowed"
+                ))
                 failed += 1
                 continue
             
             contents = await file.read()
+            if len(contents) > MAX_IMAGE_SIZE:
+                logger.warning(f"Batch: File too large: {file.filename}")
+                results.append(EmotionResponse(
+                    emotion="error", 
+                    confidence=0.0, 
+                    reasoning="Image exceeds 5MB limit"
+                ))
+                failed += 1
+                continue
+                
             sentiment = llama_service.analyze_face(contents)
             results.append(sentiment)
+            if sentiment.emotion == "error":
+                failed += 1
+                
         except Exception as e:
             logger.error(f"Batch processing error for {file.filename}: {str(e)}")
             failed += 1
-            results.append(EmotionResponse(emotion="error", confidence=0.0, reasoning=str(e)))
+            results.append(EmotionResponse(
+                emotion="error", 
+                confidence=0.0, 
+                reasoning=f"Critical processing error: {str(e)}"
+            ))
 
     return BatchResponse(
         results=results,
         processed_count=len(results),
         failed_count=failed
     )
+

@@ -8,6 +8,7 @@ export interface EmotionAnalysis {
 }
 
 /**
+/**
  * Multiple analysis result from batch endpoint
  */
 export interface BatchResponse {

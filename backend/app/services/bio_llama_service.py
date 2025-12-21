@@ -2,8 +2,19 @@ import json
 import requests
 import base64
 from typing import Dict, Any
-from ..schemas import EmotionResponse
-from ..logger import get_logger
+import sys
+import os
+
+# Add parent directory to path to find schemas and logger
+parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
+
+import bio_schemas
+import bio_logger
+
+EmotionResponse = bio_schemas.EmotionResponse
+get_logger = bio_logger.get_logger
 
 logger = get_logger("LlamaService")
 
@@ -75,29 +86,44 @@ RULES:
         }
 
         try:
-            response = requests.post(self.api_url, json=payload)
+            response = requests.post(self.api_url, json=payload, timeout=30)
             response.raise_for_status()
             result = response.json()
             
             content = result.get("message", {}).get("content", "{}")
             
-            # Parse JSON content
+            # Robust JSON parsing
             try:
+                # model occasionally wraps json in markdown blocks
+                if "```json" in content:
+                    content = content.split("```json")[1].split("```")[0].strip()
+                elif "```" in content:
+                    content = content.split("```")[1].split("```")[0].strip()
+                
                 parsed_content = json.loads(content)
+                
+                # Ensure we have the minimum required fields for EmotionResponse
+                if not all(k in parsed_content for k in ["emotion", "confidence", "reasoning"]):
+                    logger.warning(f"Response missing fields: {parsed_content.keys()}")
+                
                 logger.info(f"Analysis successful: {parsed_content.get('emotion')}")
                 return EmotionResponse(**parsed_content)
+                
             except (json.JSONDecodeError, ValueError) as e:
-                logger.error(f"Failed to parse model output: {content}")
-                # Fallback return
+                logger.error(f"Failed to parse model output: {content} | Error: {str(e)}")
                 return EmotionResponse(
                     emotion="error", 
                     confidence=0.0, 
-                    reasoning=f"Model output format error: {str(e)}"
+                    reasoning=f"Invalid JSON from model: {str(e)}"
                 )
 
+        except requests.exceptions.Timeout:
+            logger.error("Llama provider request timed out.")
+            return EmotionResponse(emotion="error", confidence=0.0, reasoning="Request to AI service timed out")
         except requests.exceptions.RequestException as e:
             logger.error(f"Request failed: {str(e)}")
-            raise RuntimeError(f"Connection error with Llama provider: {str(e)}")
+            return EmotionResponse(emotion="error", confidence=0.0, reasoning=f"API Connection error: {str(e)}")
+
 
 # Singleton instance
 llama_service = LlamaService()

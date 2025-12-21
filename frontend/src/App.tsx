@@ -59,7 +59,6 @@ function App() {
     }
   };
 
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
       <div className="container mx-auto px-4 py-8 max-w-4xl">
@@ -79,7 +78,6 @@ function App() {
             Análisis de emociones y microexpresiones con Llama 3.2 Vision
           </p>
         </div>
-
 
         {/* Main Card */}
         <div className="bg-white rounded-2xl shadow-xl p-8 mb-6">
@@ -130,7 +128,6 @@ function App() {
               </div>
             </div>
           )}
-
         </div>
 
         {/* Footer */}
@@ -143,3 +140,4 @@ function App() {
 }
 
 export default App;
+
