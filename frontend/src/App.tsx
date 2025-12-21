@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ImageUploader } from './components/ImageUploader';
 import { EmotionDisplay } from './components/EmotionDisplay';
 import { LoadingSpinner } from './components/LoadingSpinner';
 import { ErrorMessage } from './components/ErrorMessage';
-import { analyzeImage } from './services/api';
-import type { EmotionAnalysis } from './types';
+import { analyzeImage, checkHealth } from './services/api';
+import type { EmotionAnalysis, HealthResponse } from './types';
 
 /**
  * Main application component
@@ -16,6 +16,20 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<EmotionAnalysis | null>(null);
+  const [healthStatus, setHealthStatus] = useState<HealthResponse | null>(null);
+
+  // Check backend health on mount
+  useEffect(() => {
+    const getHealth = async () => {
+      try {
+        const health = await checkHealth();
+        setHealthStatus(health);
+      } catch (err) {
+        console.error('Backend unreachable:', err);
+      }
+    };
+    getHealth();
+  }, []);
 
   // Reset state when new image is selected
   const handleImageSelect = (file: File) => {
@@ -34,21 +48,30 @@ function App() {
 
     try {
       const analysis = await analyzeImage(selectedFile);
+      if (analysis.emotion === 'error') {
+        throw new Error(analysis.reasoning);
+      }
       setResult(analysis);
     } catch (err: any) {
-      // Extract error message from API response or use fallback
-      const errorMsg = err.response?.data?.detail || err.message || 'Error al analizar la imagen';
-      setError(errorMsg);
+      setError(err.message || 'Error al analizar la imagen');
     } finally {
       setLoading(false);
     }
   };
+
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
       <div className="container mx-auto px-4 py-8 max-w-4xl">
         {/* Header */}
         <div className="text-center mb-8">
+          <div className="flex justify-center items-center gap-2 mb-4">
+            <span className={`h-3 w-3 rounded-full ${healthStatus?.status === 'healthy' ? 'bg-green-500' : 'bg-red-500 shadow-sm animate-pulse'}`}></span>
+            <span className="text-xs font-medium text-gray-500 uppercase tracking-widest">
+              {healthStatus ? `Backend ${healthStatus.status}` : 'Buscando servidor...'}
+              {healthStatus?.llama_status === 'disconnected' && ' (Llama Offline)'}
+            </span>
+          </div>
           <h1 className="text-4xl font-bold text-gray-800 mb-2">
             Sistema Biométrico IA
           </h1>
@@ -57,10 +80,11 @@ function App() {
           </p>
         </div>
 
+
         {/* Main Card */}
         <div className="bg-white rounded-2xl shadow-xl p-8 mb-6">
-          <ImageUploader 
-            onImageSelect={handleImageSelect} 
+          <ImageUploader
+            onImageSelect={handleImageSelect}
             disabled={loading}
           />
 
@@ -85,13 +109,13 @@ function App() {
           )}
 
           {error && (
-            <div className="mt-6">
+            <div className="mt-6 animate-fade-in">
               <ErrorMessage message={error} />
             </div>
           )}
 
           {result && (
-            <div className="mt-6">
+            <div className="mt-6 animate-fade-in">
               <EmotionDisplay analysis={result} />
               <div className="mt-4 text-center">
                 <button
@@ -106,6 +130,7 @@ function App() {
               </div>
             </div>
           )}
+
         </div>
 
         {/* Footer */}
