@@ -1,10 +1,14 @@
-import sys
 import os
+import sys
 
-# Add parent dir to path to import app modules
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
+# Ensure backend directory is in path
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../'))
+backend_dir = os.path.join(project_root, 'backend/app')
+if backend_dir not in sys.path:
+    sys.path.insert(0, backend_dir)
 
-from backend.app.services.llama_service import llama_service
+from services.bio_llama_service import llama_service
+
 from PIL import Image
 import io
 
@@ -32,8 +36,9 @@ def main():
     print("\n--- RESULT ---")
     print(result)
     
-    if result.get("emotion") == "error":
+    if result.emotion == "error":
         print("\n[FAIL] Test Failed.")
+
         sys.exit(1)
     else:
         print("\n[PASS] Valid JSON received.")
