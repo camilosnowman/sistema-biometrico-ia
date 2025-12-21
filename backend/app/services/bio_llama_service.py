@@ -19,7 +19,7 @@ get_logger = bio_logger.get_logger
 logger = get_logger("LlamaService")
 
 class LlamaService:
-    def __init__(self, model: str = "llama3.2-vision", provider: str = "ollama", api_url: str = "http://localhost:11434/api/chat"):
+    def __init__(self, model: str = "llama3.2-vision:latest", provider: str = "ollama", api_url: str = "http://localhost:11434/api/chat"):
         self.model = model
         self.provider = provider
         self.api_url = api_url
@@ -86,7 +86,7 @@ RULES:
         }
 
         try:
-            response = requests.post(self.api_url, json=payload, timeout=30)
+            response = requests.post(self.api_url, json=payload, timeout=90)
             response.raise_for_status()
             result = response.json()
             
