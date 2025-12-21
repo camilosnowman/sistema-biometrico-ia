@@ -1,4 +1,5 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, Request, JSONResponse
+from fastapi import FastAPI, UploadFile, File, HTTPException, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
@@ -21,6 +22,7 @@ EmotionResponse = bio_schemas.EmotionResponse
 BatchResponse = bio_schemas.BatchResponse
 HealthResponse = bio_schemas.HealthResponse
 get_logger = bio_logger.get_logger
+
 
 logger = get_logger("MainAPI")
 

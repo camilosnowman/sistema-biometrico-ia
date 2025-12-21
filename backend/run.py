@@ -2,8 +2,13 @@ import uvicorn
 import os
 import sys
 
-# Add the current directory (backend) to sys.path
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+# Ensure backend directory is in path
+backend_dir = os.path.dirname(os.path.abspath(__file__))
+if backend_dir not in sys.path:
+    sys.path.insert(0, backend_dir)
 
 if __name__ == "__main__":
+    # Change to backend directory to ensure relative paths in app work
+    os.chdir(backend_dir)
     uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
+
